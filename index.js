@@ -9,8 +9,9 @@ const path = require('path');
 // تحميل الإعدادات
 const config = require('./config.json');
 
-// متغير لحفظ صورة الـ QR ليعرضها في المتصفح بنقاوة ممتازة
+// متغيرات الربط المباشر
 let currentQrDataUrl = null;
+let currentPairingCode = null;
 
 // ملف لتخزين الطلبيات التي تم إرسال إشعارات لها منعاً للتكرار
 const SENT_LOG_FILE = path.join(__dirname, 'sent_orders.json');
@@ -52,29 +53,44 @@ function formatWhatsAppNumber(phone) {
     return `${clean}@c.us`;
 }
 
-// 🌐 إنشاء سيرفر ويب لعرض رمز الـ QR بوضوح عالي + تلبية متطلبات Render
+// 🌐 سيرفر عرض الـ QR + كود الرقم 8 أرقام (Pairing Code)
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    if (currentQrDataUrl) {
+    
+    if (currentPairingCode || currentQrDataUrl) {
         res.end(`
             <!DOCTYPE html>
             <html lang="ar" dir="rtl">
             <head>
                 <meta charset="UTF-8">
-                <title>DHD Express WhatsApp QR Code</title>
+                <title>DHD Express WhatsApp Connection</title>
                 <style>
-                    body { font-family: system-ui, sans-serif; text-align: center; background: #0f172a; color: #fff; padding: 40px; }
-                    .card { background: #1e293b; display: inline-block; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-                    img { width: 300px; height: 300px; background: white; padding: 15px; border-radius: 12px; margin-top: 15px; }
-                    h1 { color: #22c55e; }
+                    body { font-family: system-ui, sans-serif; text-align: center; background: #0f172a; color: #fff; padding: 30px; }
+                    .card { background: #1e293b; display: inline-block; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); max-width: 500px; }
+                    .code-box { background: #0f172a; border: 2px solid #22c55e; color: #22c55e; font-size: 38px; font-weight: bold; letter-spacing: 8px; padding: 15px 25px; border-radius: 12px; margin: 20px 0; }
+                    img { width: 260px; height: 260px; background: white; padding: 12px; border-radius: 12px; margin-top: 15px; }
+                    h1 { color: #22c55e; margin-bottom: 5px; }
+                    .step { background: #334155; padding: 10px 15px; margin: 10px 0; border-radius: 8px; text-align: right; font-size: 15px; }
                 </style>
             </head>
             <body>
                 <div class="card">
-                    <h1>📱 ربط واتساب DHD Express</h1>
-                    <p>افتح تطبيق الواتساب في هاتفك <b>(0673789179)</b> واذهب إلى:<br><b>الأجهزة المرتبطة ← ربط جهاز</b> وامسح الرمز التالي:</p>
-                    <img src="${currentQrDataUrl}" alt="WhatsApp QR Code">
+                    <h1>🔑 ربط الواتساب (0673789179)</h1>
+                    
+                    ${currentPairingCode ? `
+                        <p><b>الخيار الأسهل السريع:</b> ادخل هذا الكود المكون من 8 أرقام مباشرة في الواتساب:</p>
+                        <div class="code-box">${currentPairingCode}</div>
+                        <div class="step">1️⃣ من تطبيق الواتساب: <b>Appareils connectés</b></div>
+                        <div class="step">2️⃣ اضغط <b>Connecter un appareil</b> ثم <b>Lier avec le numéro de téléphone</b> (بالأسفل)</div>
+                        <div class="step">3️⃣ اكتب الكود المكون من 8 أرقام أعلاه!</div>
+                    ` : ''}
+
+                    ${currentQrDataUrl ? `
+                        <hr style="border-color:#334155; margin:25px 0;">
+                        <p>أو يمكنك مسح رمز الـ QR التالي عبر الكاميرا:</p>
+                        <img src="${currentQrDataUrl}" alt="WhatsApp QR Code">
+                    ` : ''}
                 </div>
             </body>
             </html>
@@ -135,16 +151,26 @@ const client = new Client({
 
 client.on('qr', async (qr) => {
     console.log('\n==================================================');
-    console.log('📱 تم توليد رمز QR بنقاوة عالية للتأطير والمسح.');
+    console.log('📱 تم توليد الـ QR + طلب كود الرقم (Pairing Code)...');
     console.log('==================================================\n');
     
     qrcode.generate(qr, { small: true });
     
-    // تحويل الـ QR إلى صورة عالية الدقة لعرضها في الرابط
     try {
         currentQrDataUrl = await qrcodeImage.toDataURL(qr);
     } catch (err) {
         console.error("خطأ تحويل الـ QR:", err);
+    }
+
+    // طلب كود الربط بالأرقام الـ 8 من واتساب مباشرة بدون كاميرا
+    try {
+        if (typeof client.requestPairingCode === 'function') {
+            const pairingCode = await client.requestPairingCode('213673789179');
+            currentPairingCode = pairingCode;
+            console.log(`🔑 🔑 كود الربط بالأرقام (Pairing Code): ${pairingCode}`);
+        }
+    } catch (err) {
+        console.log("إشعارات كود الأرقام غير مدعومة بالنسخة، الاعتماد على QR.");
     }
 });
 
@@ -152,7 +178,8 @@ let lastCheckedMinute = "";
 let cachedOrders = [];
 
 client.on('ready', async () => {
-    currentQrDataUrl = null; // إزالة الـ QR عند النجاح
+    currentQrDataUrl = null;
+    currentPairingCode = null;
     console.log('\n✅ تم الاتصال بنجاح بـ واتساب الرقم (0673789179)!');
     console.log(`⏰ الأوقات المحددة للفحص اليومي والتقرير هي: ${config.scheduled_times.join(' - ')}`);
 
