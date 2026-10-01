@@ -1,11 +1,16 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const qrcodeImage = require('qrcode');
+const http = require('http');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
 // تحميل الإعدادات
 const config = require('./config.json');
+
+// متغير لحفظ صورة الـ QR ليعرضها في المتصفح بنقاوة ممتازة
+let currentQrDataUrl = null;
 
 // ملف لتخزين الطلبيات التي تم إرسال إشعارات لها منعاً للتكرار
 const SENT_LOG_FILE = path.join(__dirname, 'sent_orders.json');
@@ -36,7 +41,6 @@ function isOrderSent(trackingCode, messageType) {
     return sent.includes(key);
 }
 
-// تحويل الأرقام الجزائرية للصيغة الدولية مع رمز الواتساب @c.us
 function formatWhatsAppNumber(phone) {
     if (!phone) return null;
     let clean = String(phone).replace(/\D/g, '');
@@ -48,7 +52,62 @@ function formatWhatsAppNumber(phone) {
     return `${clean}@c.us`;
 }
 
-// إعداد خيارات Puppeteer المتوافقة مع السيرفر السحابي (Render / Linux / Docker)
+// 🌐 إنشاء سيرفر ويب لعرض رمز الـ QR بوضوح عالي + تلبية متطلبات Render
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    if (currentQrDataUrl) {
+        res.end(`
+            <!DOCTYPE html>
+            <html lang="ar" dir="rtl">
+            <head>
+                <meta charset="UTF-8">
+                <title>DHD Express WhatsApp QR Code</title>
+                <style>
+                    body { font-family: system-ui, sans-serif; text-align: center; background: #0f172a; color: #fff; padding: 40px; }
+                    .card { background: #1e293b; display: inline-block; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+                    img { width: 300px; height: 300px; background: white; padding: 15px; border-radius: 12px; margin-top: 15px; }
+                    h1 { color: #22c55e; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>📱 ربط واتساب DHD Express</h1>
+                    <p>افتح تطبيق الواتساب في هاتفك <b>(0673789179)</b> واذهب إلى:<br><b>الأجهزة المرتبطة ← ربط جهاز</b> وامسح الرمز التالي:</p>
+                    <img src="${currentQrDataUrl}" alt="WhatsApp QR Code">
+                </div>
+            </body>
+            </html>
+        `);
+    } else {
+        res.end(`
+            <!DOCTYPE html>
+            <html lang="ar" dir="rtl">
+            <head>
+                <meta charset="UTF-8">
+                <title>DHD Express WhatsApp Status</title>
+                <style>
+                    body { font-family: system-ui, sans-serif; text-align: center; background: #0f172a; color: #fff; padding: 50px; }
+                    .card { background: #1e293b; display: inline-block; padding: 40px; border-radius: 16px; }
+                    h1 { color: #22c55e; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>✅ النظام متصل ويعمل أونلاين 24/7</h1>
+                    <p>تم ربط الواتساب بنجاح والنظام يتفقد طلبيات DHD Express بانتظام.</p>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+});
+
+server.listen(PORT, () => {
+    console.log(`🌐 سيرفر العرض شغال على المنفذ: ${PORT}`);
+});
+
+// إعداد خيارات Puppeteer المتوافقة مع السيرفر السحابي
 const puppeteerArgs = {
     headless: true,
     args: [
@@ -67,7 +126,6 @@ if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     puppeteerArgs.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
 }
 
-// إنشاء كائن الواتساب
 const client = new Client({
     authStrategy: new LocalAuth({
         clientId: "dhd-session"
@@ -75,17 +133,26 @@ const client = new Client({
     puppeteer: puppeteerArgs
 });
 
-client.on('qr', (qr) => {
+client.on('qr', async (qr) => {
     console.log('\n==================================================');
-    console.log('📱 امسح رمز الـ QR التالي باستخدام واتساب هاتفك (0673789179):');
+    console.log('📱 تم توليد رمز QR بنقاوة عالية للتأطير والمسح.');
     console.log('==================================================\n');
+    
     qrcode.generate(qr, { small: true });
+    
+    // تحويل الـ QR إلى صورة عالية الدقة لعرضها في الرابط
+    try {
+        currentQrDataUrl = await qrcodeImage.toDataURL(qr);
+    } catch (err) {
+        console.error("خطأ تحويل الـ QR:", err);
+    }
 });
 
 let lastCheckedMinute = "";
 let cachedOrders = [];
 
 client.on('ready', async () => {
+    currentQrDataUrl = null; // إزالة الـ QR عند النجاح
     console.log('\n✅ تم الاتصال بنجاح بـ واتساب الرقم (0673789179)!');
     console.log(`⏰ الأوقات المحددة للفحص اليومي والتقرير هي: ${config.scheduled_times.join(' - ')}`);
 
@@ -106,7 +173,7 @@ client.on('ready', async () => {
     }, 30000);
 });
 
-// 💬 الميزة 3: الرد التلقائي الآلي على أسئلة الزبائن
+// 💬 الرد التلقائي الآلي على أسئلة الزبائن
 client.on('message', async (msg) => {
     try {
         const text = (msg.body || '').toLowerCase().trim();
@@ -194,24 +261,21 @@ async function checkDhdOrders() {
             const city = order.wilaya || order.commune || 'مدينتك';
             const price = parseFloat(order.total_paid || 0) || 0;
 
-            const isStopDesk = order.stop_desk === 1; // 1 = مكتب، 0 = منزل
+            const isStopDesk = order.stop_desk === 1;
             const subState = order.current_sub_state;
-            const isPostponed = !!order.postponed_to; // مؤجلة ليوم آخر
+            const isPostponed = !!order.postponed_to;
             const isReturn = order.is_return === 1 || String(order.status || '').includes('retour');
 
-            // بيانات الليفروغ/الموزع من DHD
             const driverName = order.driver_name;
             const driverPhone = order.driver_phone;
             const driverPhoneLine = driverPhone ? `👤 الموزع: *${driverName || 'المندوب'}*\n📞 هاتف الموزع: *${driverPhone}*\n` : '';
 
-            // بيانات المكتب ورابط غوغل ماب
             const deskInfo = order.desk_details || {};
             const officeAddress = deskInfo.hub_location_adresse || `مكتب DHD Express بـ ${city}`;
             const officePhone = deskInfo.hub_location_phone || driverPhone;
             const officeMapsLink = deskInfo.hub_location_map || `https://www.google.com/maps/search/DHD+Express+${encodeURIComponent(city)}`;
             const officePhoneLine = officePhone ? `📞 هاتف المكتب للتواصل: *${officePhone}*\n` : '';
 
-            // 1️⃣ الطلبيات الحقيقية المسلمة بنجاح فقط (SubState = 5 أو Livré مؤكد وبدون تأجيل)
             const isStrictlyDelivered = (subState === 5 || String(order.status || '').includes('livré')) && !isPostponed && !isReturn;
             
             if (isStrictlyDelivered) {
@@ -240,12 +304,10 @@ async function checkDhdOrders() {
                 }
             }
 
-            // 2️⃣ الطلبيات المؤجلة (Postponed)
             if (isPostponed && !isStrictlyDelivered && !isReturn) {
                 countPostponed++;
             }
 
-            // 3️⃣ 🚨 إنقاذ الروتور (إلغاء أو رجوع)
             if (isReturn || order.cancel_reason) {
                 countRetourRescued++;
                 if (!isOrderSent(trackingCode, 'RETOUR_RESCUE')) {
@@ -268,7 +330,6 @@ async function checkDhdOrders() {
                 }
             }
 
-            // 4️⃣ حالات التوصيل للمكتب (Stop Desk = 1)
             if (isStopDesk && !isStrictlyDelivered && !isReturn) {
                 countDeskDelivery++;
                 if (!isOrderSent(trackingCode, 'DESK')) {
@@ -294,7 +355,6 @@ ${officePhoneLine}💰 المبلغ المستحق: ${price} دج
                     saveSentOrder(trackingCode, 'DESK');
                 }
 
-            // 5️⃣ حالات التوصيل للمنزل (Stop Desk = 0) ومزالت على قيد التوصيل
             } else if (!isStopDesk && (subState === 2 || subState === 4 || subState === 1) && !isStrictlyDelivered && !isReturn) {
                 countHomeDelivery++;
                 if (!isOrderSent(trackingCode, 'HOME')) {
@@ -328,7 +388,6 @@ ${driverPhoneLine}📍 الولاية/المدينة: ${city}
         console.log(`🚨 تنبيهات إنقاذ الروتور: ${countRetourRescued} | ⚠️ تنبيهات عدم الرد: ${countNoAnswerAlerts}`);
         console.log('==================================================\n');
 
-        // التقرير اليومي المالي الملخص لواتسابك (0673789179)
         const myWaId = formatWhatsAppNumber(config.my_phone_number);
         const reportMsg = 
 `📊 *التقرير اليومي المالي لطلبيات DHD Express*
