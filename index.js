@@ -315,6 +315,9 @@ async function checkAndNotifyOrders() {
 
         const isStrictlyDelivered = (subState === 5 || String(order.status || '').includes('livré')) && !isPostponed && !isReturn;
 
+        // 🔍 DEBUG - نشوف كل طلبية وحالتها
+        console.log(`🔎 [${trackingCode}] subState=${subState} | status="${order.status}" | stopDesk=${isStopDesk} | return=${isReturn} | postponed=${isPostponed} | phone=${customerPhone} | delivered=${isStrictlyDelivered}`);
+
         // ✅ رسالة التسليم + طلب التقييم
         if (isStrictlyDelivered && !isOrderSent(trackingCode, 'REVIEW')) {
             const reviewMsg =
