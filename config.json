@@ -1,0 +1,6 @@
+{
+  "dhd_api_token": "yT1xvLIvOCcZtlJ6fuTEBv86cf2oJ8zslVMLaPWNjBO5J0wf4VhMDHfFMVhL",
+  "dhd_api_url": "https://platform.dhd-dz.com/api/v1/livraisons",
+  "my_phone_number": "213673789179",
+  "scheduled_times": ["10:00", "12:00", "14:00", "20:00"]
+}

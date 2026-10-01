@@ -1,0 +1,14 @@
+{
+  "name": "dhd-whatsapp-tracker",
+  "version": "1.0.0",
+  "description": "نظام تتبع طلبيات DHD Express وإرسال إشعارات الواتساب تلقائياً",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.0"
+  }
+}
