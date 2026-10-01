@@ -174,6 +174,26 @@ client.on('qr', async (qr) => {
     }
 });
 
+// ✅ إعادة الاتصال تلقائياً عند الانقطاع
+client.on('disconnected', (reason) => {
+    console.log(`\n🔴 واتساب انقطع! السبب: ${reason}`);
+    console.log('🔄 جاري إعادة الاتصال تلقائياً خلال 10 ثواني...');
+    currentQrDataUrl = null;
+    currentPairingCode = null;
+    setTimeout(() => {
+        console.log('🔄 إعادة تشغيل واتساب...');
+        client.initialize();
+    }, 10000);
+});
+
+client.on('auth_failure', (msg) => {
+    console.error(`\n❌ فشل المصادقة: ${msg}`);
+    console.log('🔄 جاري إعادة المحاولة خلال 15 ثانية...');
+    setTimeout(() => {
+        client.initialize();
+    }, 15000);
+});
+
 let lastCheckedMinute = "";
 let cachedOrders = [];
 
@@ -206,6 +226,17 @@ client.on('ready', async () => {
             sendDailyReport();
         }
     }, 30000);
+
+    // ✅ Keep-Alive: بينج كل 4 دقائق باش Render ما يوقفش
+    const SERVICE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    setInterval(async () => {
+        try {
+            await axios.get(SERVICE_URL);
+            console.log(`📡 [Keep-Alive] ping نجح ✅`);
+        } catch (e) {
+            console.log(`⚠️ [Keep-Alive] فشل البينج`);
+        }
+    }, 4 * 60 * 1000); // كل 4 دقائق
 });
 
 // 💬 الرد التلقائي الآلي على أسئلة الزبائن
