@@ -15,6 +15,31 @@ let currentPairingCode = null;
 
 // ملف لتخزين الطلبيات التي تم إرسال إشعارات لها منعاً للتكرار
 const SENT_LOG_FILE = path.join(__dirname, 'sent_orders.json');
+const INIT_DONE_FILE = path.join(__dirname, 'init_done.json');
+
+// ✅ هل هذا أول تشغيل؟
+function isFirstRun() {
+    return !fs.existsSync(INIT_DONE_FILE);
+}
+
+function markInitDone() {
+    fs.writeFileSync(INIT_DONE_FILE, JSON.stringify({ date: new Date().toISOString() }));
+}
+
+// ✅ وضع علامة على جميع الطلبيات القديمة كـ "مبعوثة" لتجنب إرسالها
+function skipOldOrders(orders) {
+    console.log(`⏭️ تخطي ${orders.length} طلبية قديمة (أول تشغيل)...`);
+    for (const order of orders) {
+        const trackingCode = String(order.tracking || order.reference || '');
+        if (!trackingCode) continue;
+        saveSentOrder(trackingCode, 'HOME');
+        saveSentOrder(trackingCode, 'DESK');
+        saveSentOrder(trackingCode, 'REVIEW');
+        saveSentOrder(trackingCode, 'RETOUR_RESCUE');
+    }
+    markInitDone();
+    console.log(`✅ تم تخطي الطلبيات القديمة. البوت سيبعث فقط للطلبيات الجديدة من الآن!`);
+}
 
 function getSentOrders() {
     if (fs.existsSync(SENT_LOG_FILE)) {
@@ -288,6 +313,12 @@ async function checkAndNotifyOrders() {
 
     cachedOrders = orders;
     console.log(`📦 إجمالي الطلبيات: ${cachedOrders.length}`);
+
+    // ✅ أول تشغيل: تخطي كل الطلبيات القديمة
+    if (isFirstRun()) {
+        skipOldOrders(orders);
+        return;
+    }
 
     let countSent = 0;
 
